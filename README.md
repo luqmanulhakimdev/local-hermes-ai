@@ -1,14 +1,14 @@
 # Local Hermes AI
 
-An experimental local AI agent environment built with Hermes Agent and Ollama.
+An experimental local AI agent environment built with Hermes Agent, Ollama, and Python.
 
 ## Project Goals
 
 - Run AI models locally using Ollama.
-- Explore AI agent architecture and tool calling.
+- Explore AI agent architecture, tool calling, and autonomous decision loops.
 - Learn Python and AI Engineering fundamentals.
-- Experiment with local LLM workflows.
-- Build practical AI projects and document the learning process.
+- Implement persistent memory and sandboxed system tools.
+- Experiment with local LLM workflows and build practical portfolio agents.
 
 ## Tech Stack
 
@@ -17,12 +17,15 @@ An experimental local AI agent environment built with Hermes Agent and Ollama.
 - **LLM Runtime**: Ollama
 - **Model**: Qwen3 (`qwen3:4b`)
 - **Agent Framework**: Hermes Agent
+- **Database**: SQLite (built-in persistent memory)
+- **Testing**: Python `unittest` & `unittest.mock`
 - **Version Control & CI**: Git & GitHub
 
 ## Project Structure
 
 ```text
 local-hermes-ai/
+├── data/                       # Local SQLite databases (gitignored)
 ├── docs/
 │   └── learning-roadmap.md     # Learning milestones and phases
 ├── experiments/                # Experimental scripts and prototypes
@@ -30,27 +33,68 @@ local-hermes-ai/
 ├── scripts/                    # Utility scripts
 ├── src/
 │   ├── __init__.py
-│   └── main.py                 # Local Hermes AI CLI Chatbot application
+│   ├── agent.py                # Multi-turn conversational AI agent
+│   ├── main.py                 # Streaming CLI chatbot
+│   ├── memory.py               # Persistent SQLite memory store
+│   ├── personal_agent.py       # Autonomous personal assistant with tool calling
+│   └── tools/
+│       ├── __init__.py
+│       ├── calculator.py       # Safe mathematical evaluator (restricted AST)
+│       └── system_tools.py     # Safe time, file listing, and reading tools
 ├── tests/
 │   ├── __init__.py
-│   └── test_main.py            # Unit test suite with mocks
+│   ├── test_agent.py           # Unit tests for multi-turn agent
+│   ├── test_calculator.py      # Unit tests for safe calculator
+│   ├── test_main.py            # Unit tests for streaming chatbot
+│   ├── test_memory.py          # Unit tests for SQLite memory store
+│   ├── test_personal_agent.py  # Unit tests for autonomous tool-calling agent
+│   └── test_system_tools.py    # Unit tests for system tools
 ├── requirements.txt            # Project dependencies
 └── README.md
 ```
 
-## Python LLM Application (`src/main.py`)
+## Python Applications & Modules
 
-A lightweight, streaming interactive CLI chatbot application communicating directly with a local Ollama instance.
+### 1. Personal AI Agent (`src/personal_agent.py`)
+An autonomous personal AI assistant featuring:
+- **Function Calling**: Integrates with Ollama's tool calling API. The model automatically selects and invokes tools when necessary.
+- **ReAct Decision Loop**: Supports up to 5 iterative tool execution rounds before outputting final answers.
+- **Persistent Long-Term Memory**: Automatically loads saved memories into system prompt context and remembers past conversations across sessions via SQLite.
+- **Built-in CLI Slash Commands**:
+  - `/remember key=value` – Store user facts or preferences.
+  - `/memories` – View all currently stored memories in JSON format.
+  - `/forget key` – Delete a specific stored key.
+  - `/reset` – Clear active conversation message history while preserving memories.
+  - `/exit` – Exit the application safely.
 
-### Key Features
+### 2. Conversational Agent (`src/agent.py`)
+A multi-turn conversational agent with in-memory message history tracking:
+- Maintains context across multiple queries in a session.
+- Provides `reset` to clear history and `exit` to terminate.
+- Gracefully handles connection drops and invalid model outputs.
 
-- **Streaming Responses**: Consumes Ollama's `/api/chat` streaming endpoint in real-time for immediate output.
-- **Thinking Mode Control**: Prepends `/no_think` directive to focus responses directly without verbose reasoning traces when using Qwen3.
-- **User Greeting & Validation**: Prompts for user name with fallback to `"User"`, validates non-empty prompt queries.
-- **Resilient Error Handling**: Catches connection errors (with instructions to start the Ollama service), timeouts, HTTP errors, and general exceptions.
-- **High Test Coverage**: Backed by a full unit test suite using `unittest` and `unittest.mock` without requiring external testing frameworks.
+### 3. Streaming CLI Chatbot (`src/main.py`)
+A fast, lightweight interactive streaming chat interface:
+- Real-time token streaming using Ollama's `/api/chat` streaming response.
+- Injects `/no_think` directive for concise direct answers with Qwen3.
+- User greeting, input validation, and detailed connection error diagnosis.
 
-### Prerequisites
+### 4. Persistent Memory Store (`src/memory.py`)
+SQLite-backed storage class (`Memory`):
+- `messages` table: Stores chronological interaction history (`role`, `content`, `created_at`).
+- `memories` table: Stores persistent key-value pairs with conflict resolution (`UPSERT`).
+- Supports dependency injection with custom database paths for isolated unit testing.
+
+### 5. Sandboxed Agent Tools (`src/tools/`)
+- **Calculator (`src/tools/calculator.py`)**: Safe mathematical expression evaluation using a restricted Python Abstract Syntax Tree (AST). Rejects unsafe builtins, function calls, and dangerous operations, with strict limits on expression length, exponent size, and result magnitude.
+- **System Tools (`src/tools/system_tools.py`)**:
+  - `get_current_time()`: Retrieves local machine date, time, and timezone.
+  - `list_project_files()`: Scans repository files while filtering out `.git`, `.venv`, `__pycache__`, and `.env`.
+  - `read_project_file(filename)`: Reads project file contents with path-traversal protection and file-size guardrails (<100 KB).
+
+---
+
+## Prerequisites
 
 1. **Ollama**: Ensure Ollama is installed and running:
    ```bash
@@ -58,12 +102,14 @@ A lightweight, streaming interactive CLI chatbot application communicating direc
    sudo systemctl start ollama   # or run: ollama serve
    ```
 
-2. **Model**: Pull the local Qwen3 model (or model of choice):
+2. **Model**: Pull the local Qwen3 model:
    ```bash
    ollama pull qwen3:4b
    ```
 
-### Setup & Installation
+---
+
+## Setup & Installation
 
 1. Create and activate a Python virtual environment:
    ```bash
@@ -76,40 +122,78 @@ A lightweight, streaming interactive CLI chatbot application communicating direc
    pip install -r requirements.txt
    ```
 
-### Usage
+---
 
-Run the chatbot from the project root:
+## Running the Applications
+
+### Run Personal Agent (Tools + Memory)
+```bash
+python3 src/personal_agent.py
+```
+Example interaction:
+```text
+==================================================
+          LOCAL PERSONAL AI AGENT
+==================================================
+
+Special commands:
+/remember key=value
+/memories
+/forget key
+/reset
+/exit
+
+AI is ready!
+
+You: /remember name=Luqman
+AI: Information saved successfully.
+
+You: What is 25 * 18, and what time is it right now?
+[AGENT] Selected tool: calculate
+[TOOL] calculate executed successfully.
+[AGENT] Selected tool: get_current_time
+[TOOL] get_current_time executed successfully.
+
+AI: 25 * 18 is 450. The current local time is 19:35:00 WIB on 2026-11-04.
+```
+
+### Run Multi-Turn Agent
+```bash
+python3 src/agent.py
+```
+
+### Run Streaming Chatbot
 ```bash
 python3 src/main.py
 ```
 
-Example interaction:
-```text
-========================================
-       LOCAL HERMES AI CHATBOT
-========================================
+---
 
-Enter your name: Alice
+## Running Unit Tests
 
-Hello, Alice! Welcome to Local Hermes AI.
-Feel free to ask the AI anything.
+The project includes 63 comprehensive unit tests covering all tools, memory operations, agents, and error handlers with 100% mocked isolation.
 
-You: Explain how neural networks learn in simple terms.
-
-AI: Neural networks learn by making predictions, comparing them to the correct answer, and adjusting internal connection weights to minimize errors over time...
-```
-
-### Running Unit Tests
-
-Execute the unit test suite with:
+Execute all unit tests:
 ```bash
 python3 -m unittest discover tests
 ```
 
 To run with verbose output:
 ```bash
+python3 -m unittest -v discover tests
+```
+
+Or run individual test modules:
+```bash
+python3 -m unittest -v tests/test_personal_agent.py
+python3 -m unittest -v tests/test_calculator.py
+python3 -m unittest -v tests/test_system_tools.py
+python3 -m unittest -v tests/test_memory.py
+python3 -m unittest -v tests/test_agent.py
 python3 -m unittest -v tests/test_main.py
 ```
+
+---
 
 ## Current Progress
 
@@ -118,8 +202,11 @@ python3 -m unittest -v tests/test_main.py
 - [x] Run Qwen3 locally
 - [x] Configure Hermes with a local model
 - [x] Build first Python LLM application
-- [ ] Experiment with tool calling
-- [ ] Build a custom AI agent
+- [x] Build multi-turn conversational agent
+- [x] Implement persistent SQLite memory
+- [x] Implement safe agent tools (Calculator & System Tools)
+- [x] Build autonomous personal AI agent with tool calling
+- [x] 100% unit test coverage for Python modules (63 tests)
 
 ## Project Status
 
