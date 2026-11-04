@@ -20,16 +20,16 @@ class TestAskAi(unittest.TestCase):
     def test_ask_ai_successful_streaming(self, mock_post):
         mock_response = MagicMock()
         mock_response.iter_lines.return_value = [
-            json.dumps({"message": {"content": "Halo"}}).encode("utf-8"),
+            json.dumps({"message": {"content": "Hello"}}).encode("utf-8"),
             b"",  # Empty line should be skipped
-            json.dumps({"message": {"content": ", ada yang bisa dibantu?"}}).encode("utf-8"),
+            json.dumps({"message": {"content": ", how can I help you today?"}}).encode("utf-8"),
         ]
         mock_response.__enter__.return_value = mock_response
         mock_response.__exit__.return_value = None
         mock_post.return_value = mock_response
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-            ask_ai("Halo")
+            ask_ai("Hello")
 
             mock_post.assert_called_once_with(
                 OLLAMA_URL,
@@ -38,7 +38,7 @@ class TestAskAi(unittest.TestCase):
                     "messages": [
                         {
                             "role": "user",
-                            "content": "/no_think\nHalo",
+                            "content": "/no_think\nHello",
                         }
                     ],
                     "stream": True,
@@ -50,7 +50,7 @@ class TestAskAi(unittest.TestCase):
 
             output = mock_stdout.getvalue()
             self.assertIn("AI: ", output)
-            self.assertIn("Halo, ada yang bisa dibantu?", output)
+            self.assertIn("Hello, how can I help you today?", output)
 
     @patch("requests.post")
     def test_ask_ai_with_missing_message_or_content(self, mock_post):
@@ -58,16 +58,16 @@ class TestAskAi(unittest.TestCase):
         mock_response.iter_lines.return_value = [
             json.dumps({}).encode("utf-8"),
             json.dumps({"message": {}}).encode("utf-8"),
-            json.dumps({"message": {"content": "Selesai"}}).encode("utf-8"),
+            json.dumps({"message": {"content": "Done"}}).encode("utf-8"),
         ]
         mock_response.__enter__.return_value = mock_response
         mock_response.__exit__.return_value = None
         mock_post.return_value = mock_response
 
         with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-            ask_ai("Tes")
+            ask_ai("Test")
             output = mock_stdout.getvalue()
-            self.assertIn("Selesai", output)
+            self.assertIn("Done", output)
 
     @patch("requests.post")
     def test_ask_ai_raises_http_error(self, mock_post):
@@ -79,29 +79,29 @@ class TestAskAi(unittest.TestCase):
 
         with patch("sys.stdout", new_callable=io.StringIO):
             with self.assertRaises(requests.exceptions.HTTPError):
-                ask_ai("Pertanyaan")
+                ask_ai("Question")
 
 
 class TestMain(unittest.TestCase):
     @patch("src.main.ask_ai")
-    @patch("builtins.input", side_effect=["Luqman", "Apa kabar?"])
+    @patch("builtins.input", side_effect=["Luqman", "How are you?"])
     def test_main_success_flow(self, mock_input, mock_ask_ai):
         with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
             main()
 
-            mock_ask_ai.assert_called_once_with("Apa kabar?")
+            mock_ask_ai.assert_called_once_with("How are you?")
             output = mock_stdout.getvalue()
-            self.assertIn("Halo, Luqman! Selamat datang di Local Hermes AI.", output)
+            self.assertIn("Hello, Luqman! Welcome to Local Hermes AI.", output)
 
     @patch("src.main.ask_ai")
-    @patch("builtins.input", side_effect=["   ", "Pertanyaan baru"])
+    @patch("builtins.input", side_effect=["   ", "New question"])
     def test_main_empty_name_defaults_to_user(self, mock_input, mock_ask_ai):
         with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
             main()
 
-            mock_ask_ai.assert_called_once_with("Pertanyaan baru")
+            mock_ask_ai.assert_called_once_with("New question")
             output = mock_stdout.getvalue()
-            self.assertIn("Halo, User! Selamat datang di Local Hermes AI.", output)
+            self.assertIn("Hello, User! Welcome to Local Hermes AI.", output)
 
     @patch("src.main.ask_ai")
     @patch("builtins.input", side_effect=["Luqman", "   "])
@@ -111,7 +111,7 @@ class TestMain(unittest.TestCase):
 
             mock_ask_ai.assert_not_called()
             output = mock_stdout.getvalue()
-            self.assertIn("Kamu belum memasukkan pertanyaan.", output)
+            self.assertIn("You have not entered a question.", output)
 
     @patch("src.main.ask_ai", side_effect=requests.exceptions.ConnectionError("Connection refused"))
     @patch("builtins.input", side_effect=["Luqman", "Test"])
@@ -120,7 +120,7 @@ class TestMain(unittest.TestCase):
             main()
 
             output = mock_stdout.getvalue()
-            self.assertIn("[ERROR] Tidak dapat terhubung ke Ollama.", output)
+            self.assertIn("[ERROR] Could not connect to Ollama.", output)
             self.assertIn("sudo systemctl start ollama", output)
 
     @patch("src.main.ask_ai", side_effect=requests.exceptions.Timeout("Request timed out"))
@@ -130,7 +130,7 @@ class TestMain(unittest.TestCase):
             main()
 
             output = mock_stdout.getvalue()
-            self.assertIn("[ERROR] Request ke Ollama mengalami timeout.", output)
+            self.assertIn("[ERROR] Request to Ollama timed out.", output)
 
     @patch("src.main.ask_ai", side_effect=requests.exceptions.HTTPError("500 Internal Server Error"))
     @patch("builtins.input", side_effect=["Luqman", "Test"])
@@ -148,7 +148,7 @@ class TestMain(unittest.TestCase):
             main()
 
             output = mock_stdout.getvalue()
-            self.assertIn("[ERROR] Terjadi masalah koneksi: General request error", output)
+            self.assertIn("[ERROR] Connection error: General request error", output)
 
     @patch("src.main.ask_ai", side_effect=Exception("Unexpected crash"))
     @patch("builtins.input", side_effect=["Luqman", "Test"])
@@ -157,7 +157,7 @@ class TestMain(unittest.TestCase):
             main()
 
             output = mock_stdout.getvalue()
-            self.assertIn("[ERROR] Terjadi kesalahan: Unexpected crash", output)
+            self.assertIn("[ERROR] An error occurred: Unexpected crash", output)
 
 
 if __name__ == "__main__":

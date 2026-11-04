@@ -1,4 +1,3 @@
-
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -44,43 +43,43 @@ def main():
     print("       LOCAL HERMES AI CHATBOT")
     print("=" * 40)
 
-    # 1. Menerima nama pengguna
-    name = input("\nMasukkan nama kamu: ").strip()
+    # 1. Receive user name
+    name = input("\nEnter your name: ").strip()
 
-    # Validasi nama
+    # Validate name
     if not name:
         name = "User"
 
-    # 2. Menampilkan sapaan
-    print(f"\nHalo, {name}! Selamat datang di Local Hermes AI.")
-    print("Silakan tanyakan sesuatu kepada AI.")
+    # 2. Display greeting
+    print(f"\nHello, {name}! Welcome to Local Hermes AI.")
+    print("Feel free to ask the AI anything.")
 
     question = input("\nYou: ").strip()
 
     if not question:
-        print("Kamu belum memasukkan pertanyaan.")
+        print("You have not entered a question.")
         return
 
-    # 3. Menangani error Ollama
+    # 3. Handle Ollama errors
     try:
         ask_ai(question)
 
     except requests.exceptions.ConnectionError:
-        print("\n[ERROR] Tidak dapat terhubung ke Ollama.")
-        print("Pastikan Ollama sedang berjalan:")
+        print("\n[ERROR] Could not connect to Ollama.")
+        print("Ensure Ollama is running:")
         print("sudo systemctl start ollama")
 
     except requests.exceptions.Timeout:
-        print("\n[ERROR] Request ke Ollama mengalami timeout.")
+        print("\n[ERROR] Request to Ollama timed out.")
 
     except requests.exceptions.HTTPError as error:
         print(f"\n[ERROR] HTTP Error: {error}")
 
     except requests.exceptions.RequestException as error:
-        print(f"\n[ERROR] Terjadi masalah koneksi: {error}")
+        print(f"\n[ERROR] Connection error: {error}")
 
     except Exception as error:
-        print(f"\n[ERROR] Terjadi kesalahan: {error}")
+        print(f"\n[ERROR] An error occurred: {error}")
 
 
 if __name__ == "__main__":

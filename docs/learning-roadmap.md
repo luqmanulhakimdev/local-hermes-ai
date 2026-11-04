@@ -7,8 +7,8 @@
 - [x] Configure Hermes Agent
 
 ## Phase 2 - Python and LLM Fundamentals
-- [ ] Python fundamentals
-- [ ] Call a local LLM through API
+- [x] Python fundamentals
+- [x] Call a local LLM through API
 - [ ] Understand prompts and responses
 - [ ] Understand context windows
 
