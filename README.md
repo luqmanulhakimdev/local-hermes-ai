@@ -25,7 +25,7 @@ An experimental local AI agent environment built with Hermes Agent and Ollama.
 - [x] Install Ollama
 - [x] Run Qwen3 locally
 - [x] Configure Hermes with a local model
-- [ ] Build first Python LLM application
+- [x] Build first Python LLM application
 - [ ] Experiment with tool calling
 - [ ] Build a custom AI agent
 
