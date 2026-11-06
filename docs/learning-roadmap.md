@@ -19,6 +19,6 @@
 - [x] Experiment with agent workflows
 
 ## Phase 4 - Portfolio Projects
-- [ ] Local AI assistant
-- [ ] Document Q&A with RAG
+- [x] Local AI assistant
+- [x] Document Q&A with RAG
 - [ ] AI automation agent
