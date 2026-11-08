@@ -378,6 +378,243 @@ class TestTaskExecutor(unittest.TestCase):
         self.assertIsNone(result.steps[0].output)
         self.assertIsNotNone(result.steps[0].error)
 
+    def test_approval_required_and_granted(self):
+        executed = []
+
+        def handler(**arguments):
+            executed.append(arguments)
+            return "executed"
+
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="dangerous_tool",
+                description="A tool requiring approval",
+                handler=handler,
+                required_arguments={"value"},
+                requires_approval=True,
+            )
+        )
+
+        approvals = []
+
+        def approval_handler(task, step, arguments):
+            approvals.append((task.task_id, step.step_id, arguments))
+            return True
+
+        executor = TaskExecutor(
+            registry,
+            approval_handler=approval_handler,
+        )
+
+        task = TaskPlan(
+            description="Test approval",
+            steps=[
+                TaskStep(
+                    step_id=1,
+                    tool="dangerous_tool",
+                    arguments={"value": "hello"},
+                )
+            ],
+        )
+
+        result = executor.execute(task)
+
+        self.assertEqual(result.status, TaskStatus.COMPLETED)
+        self.assertEqual(result.steps[0].status, StepStatus.COMPLETED)
+        self.assertEqual(executed, [{"value": "hello"}])
+        self.assertEqual(len(approvals), 1)
+
+
+    def test_approval_required_and_denied(self):
+        executed = []
+
+        def handler(**arguments):
+            executed.append(arguments)
+            return "executed"
+
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="dangerous_tool",
+                description="A tool requiring approval",
+                handler=handler,
+                required_arguments={"value"},
+                requires_approval=True,
+            )
+        )
+
+        def approval_handler(task, step, arguments):
+            return False
+
+        executor = TaskExecutor(
+            registry,
+            approval_handler=approval_handler,
+        )
+
+        task = TaskPlan(
+            description="Test approval denial",
+            steps=[
+                TaskStep(
+                    step_id=1,
+                    tool="dangerous_tool",
+                    arguments={"value": "hello"},
+                )
+            ],
+        )
+
+        result = executor.execute(task)
+
+        self.assertEqual(result.status, TaskStatus.FAILED)
+        self.assertEqual(result.steps[0].status, StepStatus.FAILED)
+        self.assertEqual(executed, [])
+        self.assertIn("Approval denied", result.steps[0].error)
+
+
+    def test_approval_required_without_handler_fails_closed(self):
+        executed = []
+
+        def handler(**arguments):
+            executed.append(arguments)
+            return "executed"
+
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="dangerous_tool",
+                description="A tool requiring approval",
+                handler=handler,
+                required_arguments={"value"},
+                requires_approval=True,
+            )
+        )
+
+        executor = TaskExecutor(registry)
+
+        task = TaskPlan(
+            description="Test missing approval handler",
+            steps=[
+                TaskStep(
+                    step_id=1,
+                    tool="dangerous_tool",
+                    arguments={"value": "hello"},
+                )
+            ],
+        )
+
+        result = executor.execute(task)
+
+        self.assertEqual(result.status, TaskStatus.FAILED)
+        self.assertEqual(result.steps[0].status, StepStatus.FAILED)
+        self.assertEqual(executed, [])
+        self.assertIn("Approval required", result.steps[0].error)
+
+
+    def test_non_approval_tool_executes_without_handler(self):
+        executed = []
+
+        def handler(**arguments):
+            executed.append(arguments)
+            return "executed"
+
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="safe_tool",
+                description="A safe tool",
+                handler=handler,
+                required_arguments={"value"},
+                requires_approval=False,
+            )
+        )
+
+        executor = TaskExecutor(registry)
+
+        task = TaskPlan(
+            description="Test safe tool",
+            steps=[
+                TaskStep(
+                    step_id=1,
+                    tool="safe_tool",
+                    arguments={"value": "hello"},
+                )
+            ],
+        )
+
+        result = executor.execute(task)
+
+        self.assertEqual(result.status, TaskStatus.COMPLETED)
+        self.assertEqual(result.steps[0].status, StepStatus.COMPLETED)
+        self.assertEqual(executed, [{"value": "hello"}])
+
+    def test_approval_handler_receives_resolved_arguments(self):
+        captured = {}
+
+        def first_handler(**arguments):
+            return "resolved-value"
+
+        def second_handler(**arguments):
+            return "executed"
+
+        registry = ToolRegistry()
+
+        registry.register(
+            ToolDefinition(
+                name="first_tool",
+                description="First tool",
+                handler=first_handler,
+                required_arguments={"value"},
+                requires_approval=False,
+            )
+        )
+
+        registry.register(
+            ToolDefinition(
+                name="second_tool",
+                description="Second tool",
+                handler=second_handler,
+                required_arguments={"value"},
+                requires_approval=True,
+            )
+        )
+
+        def approval_handler(task, step, arguments):
+            captured["task"] = task
+            captured["step"] = step
+            captured["arguments"] = arguments
+            return True
+
+        executor = TaskExecutor(
+            registry,
+            approval_handler=approval_handler,
+        )
+
+        task = TaskPlan(
+            description="Test resolved approval arguments",
+            steps=[
+                TaskStep(
+                    step_id=1,
+                    tool="first_tool",
+                    arguments={"value": "original"},
+                ),
+                TaskStep(
+                    step_id=2,
+                    tool="second_tool",
+                    arguments={"value": "$step_1"},
+                ),
+            ],
+        )
+
+        result = executor.execute(task)
+
+        self.assertEqual(result.status, TaskStatus.COMPLETED)
+        self.assertIs(captured["task"], task)
+        self.assertEqual(captured["step"].step_id, 2)
+        self.assertEqual(
+            captured["arguments"],
+            {"value": "resolved-value"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

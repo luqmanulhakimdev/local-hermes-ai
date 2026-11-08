@@ -11,6 +11,7 @@ MAX_TASK_STEPS = 5
 class TaskStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -18,6 +19,7 @@ class TaskStatus(str, Enum):
 class StepStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
 

@@ -115,6 +115,112 @@ class TestExecutorLogging(unittest.TestCase):
             "Halo, Hermes!",
         )
 
+    def test_approval_granted_is_logged(self):
+        registry = ToolRegistry()
+
+        registry.register(
+            ToolDefinition(
+                name="dangerous_tool",
+                description="A tool requiring approval",
+                handler=lambda **arguments: "executed",
+                required_arguments={"value"},
+                requires_approval=True,
+            )
+        )
+
+        logger = TaskLogger()
+
+        executor = TaskExecutor(
+            registry,
+            logger=logger,
+            approval_handler=lambda task, step, arguments: True,
+        )
+
+        task = TaskPlan(
+            description="Approval logging test",
+            steps=[
+                TaskStep(
+                    step_id=1,
+                    tool="dangerous_tool",
+                    arguments={"value": "hello"},
+                )
+            ],
+        )
+
+        result = executor.execute(task)
+
+        self.assertEqual(result.status, TaskStatus.COMPLETED)
+
+        logs = logger.get_task_logs(task.task_id)
+        events = [log["event"] for log in logs]
+
+        self.assertEqual(
+            events,
+            [
+                "task_started",
+                "step_started",
+                "approval_requested",
+                "approval_granted",
+                "step_completed",
+                "task_completed",
+            ],
+        )
+
+
+    def test_approval_denied_is_logged(self):
+        executed = []
+
+        registry = ToolRegistry()
+
+        registry.register(
+            ToolDefinition(
+                name="dangerous_tool",
+                description="A tool requiring approval",
+                handler=lambda **arguments: executed.append(arguments),
+                required_arguments={"value"},
+                requires_approval=True,
+            )
+        )
+
+        logger = TaskLogger()
+
+        executor = TaskExecutor(
+            registry,
+            logger=logger,
+            approval_handler=lambda task, step, arguments: False,
+        )
+
+        task = TaskPlan(
+            description="Approval denial logging test",
+            steps=[
+                TaskStep(
+                    step_id=1,
+                    tool="dangerous_tool",
+                    arguments={"value": "hello"},
+                )
+            ],
+        )
+
+        result = executor.execute(task)
+
+        self.assertEqual(result.status, TaskStatus.FAILED)
+        self.assertEqual(executed, [])
+
+        logs = logger.get_task_logs(task.task_id)
+        events = [log["event"] for log in logs]
+
+        self.assertEqual(
+            events,
+            [
+                "task_started",
+                "step_started",
+                "approval_requested",
+                "approval_denied",
+                "step_failed",
+                "task_failed",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

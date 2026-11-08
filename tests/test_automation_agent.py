@@ -7,6 +7,7 @@ from src.automation.models import (
     TaskStep,
     TaskStatus,
 )
+from src.automation.registry import ToolDefinition, ToolRegistry
 
 
 class TestAutomationAgent(unittest.TestCase):
@@ -25,7 +26,17 @@ class TestAutomationAgent(unittest.TestCase):
         self.planner = Mock()
         self.planner.plan.return_value = self.task
 
-        self.registry = Mock()
+        self.registry = ToolRegistry()
+        self.registry.register(
+            ToolDefinition(
+                name="test_tool",
+                description="Test tool",
+                handler=lambda: "test output",
+                required_arguments=set(),
+                requires_approval=False,
+            )
+        )
+
         self.logger = Mock()
 
         self.agent = AutomationAgent(

@@ -86,6 +86,39 @@ class TestToolRegistry(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be a dictionary"):
             self.registry.execute("greet", ["AI Engineer"])
 
+    def test_tool_requires_approval_metadata(self):
+        tool = ToolDefinition(
+            name="send_email",
+            description="Send an email",
+            handler=lambda **kwargs: "sent",
+            required_arguments={"to", "subject", "body"},
+            requires_approval=True,
+        )
+
+        self.assertTrue(tool.requires_approval)
+
+    def test_tool_does_not_require_approval_by_default(self):
+        tool = ToolDefinition(
+            name="read_file",
+            description="Read a file",
+            handler=lambda **kwargs: "content",
+            required_arguments={"path"},
+        )
+
+        self.assertFalse(tool.requires_approval)
+
+    def test_requires_approval_must_be_boolean(self):
+        tool = ToolDefinition(
+            name="bad_tool",
+            description="Invalid tool",
+            handler=lambda **kwargs: "result",
+            required_arguments=set(),
+            requires_approval="yes",
+        )
+
+        with self.assertRaises(ValueError):
+            tool.validate_arguments({})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ import signal
 from src.automation.models import TaskPlan, TaskStatus, StepStatus
 from src.automation.registry import ToolRegistry
 from src.automation.validator import TaskValidator
+from typing import Any, Callable
 
 STEP_REFERENCE_PATTERN = re.compile(r"^\$step_(\d+)$")
 
@@ -20,6 +21,7 @@ class TaskExecutor:
         logger=None,
         max_output_size: int = MAX_OUTPUT_SIZE,
         tool_timeout: int = DEFAULT_TOOL_TIMEOUT,
+        approval_handler: Callable[[TaskPlan, Any, dict], bool] | None = None,
     ):
         if max_output_size <= 0:
             raise ValueError("max_output_size must be greater than 0")
@@ -32,6 +34,7 @@ class TaskExecutor:
         self.validator = TaskValidator(registry)
         self.max_output_size = max_output_size
         self.tool_timeout = tool_timeout
+        self.approval_handler = approval_handler
 
     def _log(self, task_id, event, step_id=None, details=None):
         if self.logger is not None:
@@ -160,6 +163,57 @@ class TaskExecutor:
                         "arguments": arguments,
                     },
                 )
+
+                tool = self.registry.get(step.tool)
+
+                if tool.requires_approval:
+                    step.status = StepStatus.AWAITING_APPROVAL
+                    task.status = TaskStatus.AWAITING_APPROVAL
+
+                    self._log(
+                        task.task_id,
+                        "approval_requested",
+                        step_id=step.step_id,
+                        details={
+                            "tool": step.tool,
+                            "arguments": arguments,
+                        },
+                    )
+
+                    if self.approval_handler is None:
+                        raise PermissionError(
+                            f"Approval required for tool: {step.tool}"
+                        )
+
+                    approved = self.approval_handler(task, step, arguments)
+
+                    if not approved:
+                        self._log(
+                            task.task_id,
+                            "approval_denied",
+                            step_id=step.step_id,
+                            details={
+                                "tool": step.tool,
+                            },
+                        )
+
+                        step.status = StepStatus.FAILED
+                        step.error = f"Approval denied for tool: {step.tool}"
+                        task.status = TaskStatus.FAILED
+                        raise PermissionError(step.error)
+
+                    self._log(
+                        task.task_id,
+                        "approval_granted",
+                        step_id=step.step_id,
+                        details={
+                            "tool": step.tool,
+                        },
+                    )
+
+                    step.status = StepStatus.RUNNING
+                    task.status = TaskStatus.RUNNING
+
 
                 result = self._execute_tool(step.tool, arguments)
 

@@ -9,8 +9,12 @@ class ToolDefinition:
     description: str
     handler: Callable[..., Any]
     required_arguments: set[str]
+    requires_approval: bool = False
 
     def validate_arguments(self, arguments: dict) -> None:
+        if not isinstance(self.requires_approval, bool):
+            raise ValueError("requires_approval must be a boolean")
+
         if not isinstance(arguments, dict):
             raise ValueError("Tool arguments must be a dictionary")
 

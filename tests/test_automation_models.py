@@ -55,6 +55,18 @@ class TestAutomationModels(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unique"):
             TaskPlan(description="Duplicate IDs", steps=steps)
 
+    def test_task_status_includes_awaiting_approval(self):
+        self.assertEqual(
+            TaskStatus.AWAITING_APPROVAL.value,
+            "awaiting_approval",
+        )
+
+    def test_step_status_includes_awaiting_approval(self):
+        self.assertEqual(
+            StepStatus.AWAITING_APPROVAL.value,
+            "awaiting_approval",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
