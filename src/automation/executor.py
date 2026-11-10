@@ -1,11 +1,11 @@
 import re
-from typing import Any
 import signal
 
 from src.automation.models import TaskPlan, TaskStatus, StepStatus
 from src.automation.registry import ToolRegistry
 from src.automation.validator import TaskValidator
 from typing import Any, Callable
+from src.automation.task_store import TaskStore
 
 STEP_REFERENCE_PATTERN = re.compile(r"^\$step_(\d+)$")
 
@@ -19,6 +19,7 @@ class TaskExecutor:
         self,
         registry: ToolRegistry,
         logger=None,
+        task_store=None,
         max_output_size: int = MAX_OUTPUT_SIZE,
         tool_timeout: int = DEFAULT_TOOL_TIMEOUT,
         approval_handler: Callable[[TaskPlan, Any, dict], bool] | None = None,
@@ -35,6 +36,7 @@ class TaskExecutor:
         self.max_output_size = max_output_size
         self.tool_timeout = tool_timeout
         self.approval_handler = approval_handler
+        self.task_store = task_store or TaskStore()
 
     def _log(self, task_id, event, step_id=None, details=None):
         if self.logger is not None:
@@ -90,6 +92,7 @@ class TaskExecutor:
             raise ValueError("Only pending tasks can be executed")
 
         task.status = TaskStatus.RUNNING
+        self.task_store.save_task(task)
 
         self._log(
             task.task_id,
@@ -97,14 +100,13 @@ class TaskExecutor:
             details={"description": task.description},
         )
 
-        # Validate the complete plan before executing any tool.
         try:
             self.validator.validate(task)
-
         except Exception as error:
             task.status = TaskStatus.FAILED
             task.steps[0].status = StepStatus.FAILED
             task.steps[0].error = f"{type(error).__name__}: {error}"
+            self.task_store.save_task(task)
 
             self._log(
                 task.task_id,
@@ -130,22 +132,56 @@ class TaskExecutor:
 
         outputs = {}
 
+        return self._execute_steps(
+            task,
+            outputs,
+            require_all_pending=True,
+        )
+
+    def _execute_steps(
+        self,
+        task: TaskPlan,
+        outputs: dict[int, Any],
+        require_all_pending: bool = False,
+    ) -> TaskPlan:
         for step in task.steps:
-            if step.status != StepStatus.PENDING:
+            if step.status == StepStatus.COMPLETED:
+                outputs[step.step_id] = step.output
+                continue
+
+            if step.status == StepStatus.FAILED:
+                task.status = TaskStatus.FAILED
+                self.task_store.save_task(task)
+                return task
+
+            if step.status == StepStatus.AWAITING_APPROVAL:
+                task.status = TaskStatus.AWAITING_APPROVAL
+                self.task_store.save_task(task)
+                return task
+
+            if require_all_pending and step.status != StepStatus.PENDING:
                 task.status = TaskStatus.FAILED
 
                 self._log(
                     task.task_id,
                     "task_failed",
                     step_id=step.step_id,
-                    details={"error": "Step is not in pending status"},
+                    details={
+                        "error": "Step is not in pending status",
+                    },
                 )
 
                 raise ValueError(
                     f"Step {step.step_id} is not in pending status"
                 )
 
+            # PENDING atau RUNNING.
+            # RUNNING saat resume berarti step sebelumnya
+            # kemungkinan terputus/interrupted, sehingga kita ulangi.
             step.status = StepStatus.RUNNING
+            step.error = None
+            task.status = TaskStatus.RUNNING
+            self.task_store.save_task(task)
 
             try:
                 arguments = self._resolve_value(
@@ -170,6 +206,8 @@ class TaskExecutor:
                     step.status = StepStatus.AWAITING_APPROVAL
                     task.status = TaskStatus.AWAITING_APPROVAL
 
+                    self.task_store.save_task(task)
+
                     self._log(
                         task.task_id,
                         "approval_requested",
@@ -185,7 +223,11 @@ class TaskExecutor:
                             f"Approval required for tool: {step.tool}"
                         )
 
-                    approved = self.approval_handler(task, step, arguments)
+                    approved = self.approval_handler(
+                        task,
+                        step,
+                        arguments,
+                    )
 
                     if not approved:
                         self._log(
@@ -198,7 +240,9 @@ class TaskExecutor:
                         )
 
                         step.status = StepStatus.FAILED
-                        step.error = f"Approval denied for tool: {step.tool}"
+                        step.error = (
+                            f"Approval denied for tool: {step.tool}"
+                        )
                         task.status = TaskStatus.FAILED
                         raise PermissionError(step.error)
 
@@ -213,15 +257,21 @@ class TaskExecutor:
 
                     step.status = StepStatus.RUNNING
                     task.status = TaskStatus.RUNNING
+                    self.task_store.save_task(task)
 
-
-                result = self._execute_tool(step.tool, arguments)
+                result = self._execute_tool(
+                    step.tool,
+                    arguments,
+                )
 
                 self._validate_output_size(result)
 
                 step.output = result
                 step.status = StepStatus.COMPLETED
+                step.error = None
                 outputs[step.step_id] = result
+
+                self.task_store.save_task(task)
 
                 self._log(
                     task.task_id,
@@ -237,6 +287,7 @@ class TaskExecutor:
                 step.status = StepStatus.FAILED
                 step.error = f"{type(error).__name__}: {error}"
                 task.status = TaskStatus.FAILED
+                self.task_store.save_task(task)
 
                 self._log(
                     task.task_id,
@@ -252,21 +303,73 @@ class TaskExecutor:
                     task.task_id,
                     "task_failed",
                     step_id=step.step_id,
-                    details={"error": step.error},
+                    details={
+                        "error": step.error,
+                    },
                 )
 
-                break
+                return task
 
-        else:
-            task.status = TaskStatus.COMPLETED
+        task.status = TaskStatus.COMPLETED
+        self.task_store.save_task(task)
 
-            self._log(
-                task.task_id,
-                "task_completed",
-                details={"steps_completed": len(task.steps)},
-            )
+        self._log(
+            task.task_id,
+            "task_completed",
+            details={
+                "steps_completed": len(task.steps),
+            },
+        )
 
         return task
+
+    def resume(self, task_id: str) -> TaskPlan:
+        task = self.task_store.get_task(task_id)
+
+        if task is None:
+            raise ValueError(f"Task not found: {task_id}")
+
+        if task.status == TaskStatus.COMPLETED:
+            raise ValueError("Completed tasks cannot be resumed")
+
+        if task.status == TaskStatus.FAILED:
+            raise ValueError("Failed tasks cannot be resumed")
+
+        if task.status == TaskStatus.AWAITING_APPROVAL:
+            raise ValueError(
+                "Tasks awaiting approval cannot be resumed automatically"
+            )
+
+        if task.status not in {
+            TaskStatus.PENDING,
+            TaskStatus.RUNNING,
+        }:
+            raise ValueError(
+                f"Task cannot be resumed from status: {task.status.value}"
+            )
+
+        self._log(
+            task.task_id,
+            "task_resumed",
+            details={
+                "description": task.description,
+            },
+        )
+
+        outputs = {}
+
+        for step in task.steps:
+            if step.status == StepStatus.COMPLETED:
+                outputs[step.step_id] = step.output
+
+        task.status = TaskStatus.RUNNING
+        self.task_store.save_task(task)
+
+        return self._execute_steps(
+            task,
+            outputs,
+            require_all_pending=False,
+        )
 
     def _validate_output_size(self, output: Any) -> None:
         if isinstance(output, str):
