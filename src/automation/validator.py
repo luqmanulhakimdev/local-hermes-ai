@@ -10,7 +10,16 @@ class TaskValidator:
     def __init__(self, registry: ToolRegistry):
         self.registry = registry
 
-    def _validate_references(self, value, current_step_id, available_step_ids):
+    def _validate_references(
+        self,
+        value,
+        current_step_id,
+        available_step_ids,
+        depth: int = 0,
+    ):
+        if depth > 10:
+            raise ValueError("Argument nesting exceeds maximum allowed depth of 10")
+
         if isinstance(value, str):
             match = STEP_REFERENCE_PATTERN.fullmatch(value)
 
@@ -33,6 +42,7 @@ class TaskValidator:
                     item,
                     current_step_id,
                     available_step_ids,
+                    depth + 1,
                 )
 
         elif isinstance(value, dict):
@@ -41,6 +51,7 @@ class TaskValidator:
                     item,
                     current_step_id,
                     available_step_ids,
+                    depth + 1,
                 )
 
     def validate(self, task: TaskPlan):

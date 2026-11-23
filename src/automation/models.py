@@ -14,6 +14,7 @@ class TaskStatus(str, Enum):
     AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class StepStatus(str, Enum):
@@ -22,6 +23,7 @@ class StepStatus(str, Enum):
     AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass
@@ -73,3 +75,49 @@ class TaskPlan:
 
         if step_ids != list(range(1, len(self.steps) + 1)):
             raise ValueError("step_id values must be sequential, starting from 1")
+
+
+def validate_task_state_consistency(task: TaskPlan) -> None:
+    if not isinstance(task, TaskPlan):
+        raise TypeError("task must be a TaskPlan")
+
+    if task.status == TaskStatus.COMPLETED:
+        for step in task.steps:
+            if step.status != StepStatus.COMPLETED:
+                raise ValueError(
+                    f"Inconsistent state: Task is COMPLETED but step {step.step_id} is {step.status.value}"
+                )
+
+    elif task.status == TaskStatus.FAILED:
+        has_failed_step = any(step.status == StepStatus.FAILED for step in task.steps)
+        if not has_failed_step:
+            raise ValueError(
+                "Inconsistent state: Task is FAILED but no step is marked FAILED"
+            )
+        for step in task.steps:
+            if step.status == StepStatus.RUNNING:
+                raise ValueError(
+                    f"Inconsistent state: Task is FAILED but step {step.step_id} is RUNNING"
+                )
+
+    elif task.status == TaskStatus.AWAITING_APPROVAL:
+        has_awaiting_step = any(
+            step.status == StepStatus.AWAITING_APPROVAL for step in task.steps
+        )
+        if not has_awaiting_step:
+            raise ValueError(
+                "Inconsistent state: Task is AWAITING_APPROVAL but no step is AWAITING_APPROVAL"
+            )
+        for step in task.steps:
+            if step.status == StepStatus.RUNNING:
+                raise ValueError(
+                    f"Inconsistent state: Task is AWAITING_APPROVAL but step {step.step_id} is RUNNING"
+                )
+
+    elif task.status == TaskStatus.CANCELLED:
+        for step in task.steps:
+            if step.status == StepStatus.RUNNING:
+                raise ValueError(
+                    f"Inconsistent state: Task is CANCELLED but step {step.step_id} is RUNNING"
+                )
+

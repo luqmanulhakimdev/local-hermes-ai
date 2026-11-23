@@ -79,32 +79,32 @@
 - [x] Full regression
 
 #### Stage 13 - Evaluation & Observability
-- [ ] Define automation success metrics
-- [ ] Build automation evaluation dataset
-- [ ] Evaluate task planning
-- [ ] Evaluate tool selection
-- [ ] Evaluate execution outcomes
-- [ ] Add execution tracing
-- [ ] Add structured run metrics
-- [ ] Add regression evaluation
-- [ ] Measure failure/recovery behavior
+- [x] Define automation success metrics
+- [x] Build automation evaluation dataset
+- [x] Evaluate task planning
+- [x] Evaluate tool selection
+- [x] Evaluate execution outcomes
+- [x] Add execution tracing
+- [x] Add structured run metrics
+- [x] Add regression evaluation
+- [x] Measure failure/recovery behavior
 
 #### Stage 14 - Production Hardening
-- [ ] Improve configuration management
-- [ ] Improve logging and diagnostics
-- [ ] Add retry/backoff where appropriate
-- [ ] Add idempotency for side-effecting tools
-- [ ] Add stronger security boundaries
-- [ ] Add resource/cost controls
-- [ ] Add operational health checks
+- [x] Improve configuration management
+- [x] Improve logging and diagnostics
+- [x] Add retry/backoff where appropriate
+- [x] Add idempotency for side-effecting tools
+- [x] Add stronger security boundaries
+- [x] Add resource/cost controls
+- [x] Add operational health checks
 
 #### Stage 15 - RAG + Automation Integration
-- [ ] Connect RAG retrieval to automation
-- [ ] Allow agent to use project knowledge
-- [ ] Validate retrieved context before actions
-- [ ] Test retrieval-driven automation
-- [ ] Test incorrect/malicious context
-- [ ] Evaluate end-to-end workflows
+- [x] Connect RAG retrieval to automation
+- [x] Allow agent to use project knowledge
+- [x] Validate retrieved context before actions
+- [x] Test retrieval-driven automation
+- [x] Test incorrect/malicious context
+- [x] Evaluate end-to-end workflows
 
 #### Stage 16 - Local Hermes AI Integration
 - [ ] Integrate Local Hermes AI components

@@ -11,6 +11,23 @@ class ToolDefinition:
     required_arguments: set[str]
     requires_approval: bool = False
 
+    def __post_init__(self):
+        if not isinstance(self.name, str):
+            raise TypeError("Tool name must be a string")
+        if not self.name.strip():
+            raise ValueError("Tool name must not be empty")
+
+        if not isinstance(self.description, str):
+            raise TypeError("Tool description must be a string")
+        if not self.description.strip():
+            raise ValueError("Tool description must not be empty")
+
+        if not callable(self.handler):
+            raise TypeError("Tool handler must be callable")
+
+        if not isinstance(self.required_arguments, set):
+            raise TypeError("required_arguments must be a set")
+
     def validate_arguments(self, arguments: dict) -> None:
         if not isinstance(self.requires_approval, bool):
             raise ValueError("requires_approval must be a boolean")
@@ -50,6 +67,11 @@ class ToolRegistry:
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> ToolDefinition:
+        if not isinstance(name, str):
+            raise TypeError("Tool name must be a string")
+        if not name.strip():
+            raise ValueError("Tool name must not be empty")
+
         tool = self._tools.get(name)
 
         if tool is None:

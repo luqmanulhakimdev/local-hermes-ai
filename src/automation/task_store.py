@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,18 +18,36 @@ DB_PATH = DATA_DIR / "automation.db"
 
 
 class TaskStore:
-    def __init__(self, db_path=None):
-        self.db_path = Path(db_path) if db_path else DB_PATH
+    def __init__(self, db_path=None, config=None):
+        if db_path:
+            self.db_path = Path(db_path)
+        elif config and config.db_path:
+            self.db_path = Path(config.db_path)
+        else:
+            self.db_path = DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
     def _connect(self):
-        connection = sqlite3.connect(self.db_path)
+        connection = sqlite3.connect(self.db_path, timeout=30.0)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
+    @contextmanager
+    def _connection(self):
+        connection = self._connect()
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def _initialize(self):
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS automation_tasks (
@@ -65,7 +84,7 @@ class TaskStore:
 
         timestamp = datetime.now(timezone.utc).isoformat()
 
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 INSERT INTO automation_tasks (
@@ -133,10 +152,12 @@ class TaskStore:
                 )
 
     def get_task(self, task_id: str) -> TaskPlan | None:
-        if not isinstance(task_id, str) or not task_id.strip():
+        if not isinstance(task_id, str):
+            raise TypeError("task_id must be a string")
+        if not task_id.strip():
             raise ValueError("task_id must not be empty")
 
-        with self._connect() as connection:
+        with self._connection() as connection:
             task_row = connection.execute(
                 """
                 SELECT task_id, description, status
@@ -164,6 +185,9 @@ class TaskStore:
                 """,
                 (task_id,),
             ).fetchall()
+
+        if not step_rows:
+            raise ValueError(f"Corrupted task data: task {task_id} has no steps")
 
         steps = []
 

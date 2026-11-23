@@ -1,11 +1,13 @@
 import re
 import signal
+import time
 
 from src.automation.models import TaskPlan, TaskStatus, StepStatus
 from src.automation.registry import ToolRegistry
 from src.automation.validator import TaskValidator
 from typing import Any, Callable
 from src.automation.task_store import TaskStore
+from src.automation.config import AutomationConfig, RetryPolicy
 
 STEP_REFERENCE_PATTERN = re.compile(r"^\$step_(\d+)$")
 
@@ -23,20 +25,55 @@ class TaskExecutor:
         max_output_size: int = MAX_OUTPUT_SIZE,
         tool_timeout: int = DEFAULT_TOOL_TIMEOUT,
         approval_handler: Callable[[TaskPlan, Any, dict], bool] | None = None,
+        config: AutomationConfig | None = None,
+        retry_policy: RetryPolicy | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
     ):
-        if max_output_size <= 0:
+        if config is not None:
+            if not isinstance(config, AutomationConfig):
+                raise TypeError("config must be an AutomationConfig")
+            effective_max_output = (
+                config.max_output_size
+                if max_output_size == MAX_OUTPUT_SIZE
+                else max_output_size
+            )
+            effective_timeout = (
+                config.tool_timeout
+                if tool_timeout == DEFAULT_TOOL_TIMEOUT
+                else tool_timeout
+            )
+            self.config = config
+            if retry_policy is None and config.retry_policy is not None:
+                retry_policy = config.retry_policy
+        else:
+            effective_max_output = max_output_size
+            effective_timeout = tool_timeout
+            self.config = AutomationConfig(
+                tool_timeout=effective_timeout,
+                max_output_size=effective_max_output,
+            )
+
+        if effective_max_output <= 0:
             raise ValueError("max_output_size must be greater than 0")
 
-        if tool_timeout <= 0:
+        if effective_timeout <= 0:
             raise ValueError("tool_timeout must be greater than 0")
+
+        if retry_policy is not None and not isinstance(retry_policy, RetryPolicy):
+            raise TypeError("retry_policy must be a RetryPolicy or None")
 
         self.registry = registry
         self.logger = logger
         self.validator = TaskValidator(registry)
-        self.max_output_size = max_output_size
-        self.tool_timeout = tool_timeout
+        self.max_output_size = effective_max_output
+        self.tool_timeout = effective_timeout
         self.approval_handler = approval_handler
-        self.task_store = task_store or TaskStore()
+        self.retry_policy = retry_policy
+        self.sleeper = sleeper
+        self._cancelled_tasks: set[str] = set()
+        self.task_store = task_store or TaskStore(
+            db_path=self.config.db_path if self.config else None
+        )
 
     def _log(self, task_id, event, step_id=None, details=None):
         if self.logger is not None:
@@ -66,7 +103,10 @@ class TaskExecutor:
                     "A step can only reference outputs from previous steps"
                 )
 
-            if referenced_step_id not in outputs:
+            if (
+                referenced_step_id not in outputs
+                or outputs[referenced_step_id] is None
+            ):
                 raise ValueError(
                     f"Output for step {referenced_step_id} is unavailable"
                 )
@@ -88,6 +128,16 @@ class TaskExecutor:
         return value
 
     def execute(self, task: TaskPlan) -> TaskPlan:
+        if task.task_id in self._cancelled_tasks:
+            task.status = TaskStatus.CANCELLED
+            self.task_store.save_task(task)
+            self._log(
+                task.task_id,
+                "task_cancelled",
+                details={"reason": "Task cancelled before execution"},
+            )
+            return task
+
         if task.status != TaskStatus.PENDING:
             raise ValueError("Only pending tasks can be executed")
 
@@ -145,6 +195,16 @@ class TaskExecutor:
         require_all_pending: bool = False,
     ) -> TaskPlan:
         for step in task.steps:
+            if task.task_id in self._cancelled_tasks:
+                task.status = TaskStatus.CANCELLED
+                self.task_store.save_task(task)
+                self._log(
+                    task.task_id,
+                    "task_cancelled",
+                    details={"reason": "Task cancelled during execution"},
+                )
+                return task
+
             if step.status == StepStatus.COMPLETED:
                 outputs[step.step_id] = step.output
                 continue
@@ -229,7 +289,7 @@ class TaskExecutor:
                         arguments,
                     )
 
-                    if not approved:
+                    if approved is not True:
                         self._log(
                             task.task_id,
                             "approval_denied",
@@ -259,10 +319,40 @@ class TaskExecutor:
                     task.status = TaskStatus.RUNNING
                     self.task_store.save_task(task)
 
-                result = self._execute_tool(
-                    step.tool,
-                    arguments,
+                can_retry = (
+                    self.retry_policy is not None
+                    and self.retry_policy.max_attempts > 1
+                    and not tool.requires_approval
                 )
+                max_attempts = self.retry_policy.max_attempts if can_retry else 1
+
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        result = self._execute_tool(
+                            step.tool,
+                            arguments,
+                        )
+                        break
+                    except Exception as error:
+                        if (
+                            can_retry
+                            and attempt < max_attempts
+                            and isinstance(error, self.retry_policy.retryable_exceptions)
+                        ):
+                            self._log(
+                                task.task_id,
+                                "step_retry",
+                                step_id=step.step_id,
+                                details={
+                                    "tool": step.tool,
+                                    "attempt": attempt,
+                                    "error": f"{type(error).__name__}: {error}",
+                                },
+                            )
+                            if self.retry_policy.delay_seconds > 0:
+                                self.sleeper(self.retry_policy.delay_seconds)
+                            continue
+                        raise
 
                 self._validate_output_size(result)
 
@@ -282,6 +372,16 @@ class TaskExecutor:
                         "output": result,
                     },
                 )
+
+                if task.task_id in self._cancelled_tasks:
+                    task.status = TaskStatus.CANCELLED
+                    self.task_store.save_task(task)
+                    self._log(
+                        task.task_id,
+                        "task_cancelled",
+                        details={"reason": "Task cancelled after step completion"},
+                    )
+                    return task
 
             except Exception as error:
                 step.status = StepStatus.FAILED
@@ -310,6 +410,11 @@ class TaskExecutor:
 
                 return task
 
+        if task.task_id in self._cancelled_tasks:
+            task.status = TaskStatus.CANCELLED
+            self.task_store.save_task(task)
+            return task
+
         task.status = TaskStatus.COMPLETED
         self.task_store.save_task(task)
 
@@ -323,6 +428,30 @@ class TaskExecutor:
 
         return task
 
+    def cancel(self, task_id: str) -> bool:
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise ValueError("task_id must not be empty")
+
+        task = self.task_store.get_task(task_id)
+        if task is None:
+            raise ValueError(f"Task not found: {task_id}")
+
+        if task.status == TaskStatus.COMPLETED:
+            raise ValueError("Completed tasks cannot be cancelled")
+
+        if task.status == TaskStatus.FAILED:
+            raise ValueError("Failed tasks cannot be cancelled")
+
+        self._cancelled_tasks.add(task_id)
+        task.status = TaskStatus.CANCELLED
+        self.task_store.save_task(task)
+        self._log(
+            task.task_id,
+            "task_cancelled",
+            details={"reason": "Cancelled by user request"},
+        )
+        return True
+
     def resume(self, task_id: str) -> TaskPlan:
         task = self.task_store.get_task(task_id)
 
@@ -335,7 +464,9 @@ class TaskExecutor:
         if task.status == TaskStatus.FAILED:
             raise ValueError("Failed tasks cannot be resumed")
 
-        if task.status == TaskStatus.AWAITING_APPROVAL:
+        if task.status == TaskStatus.AWAITING_APPROVAL or any(
+            s.status == StepStatus.AWAITING_APPROVAL for s in task.steps
+        ):
             raise ValueError(
                 "Tasks awaiting approval cannot be resumed automatically"
             )
@@ -343,10 +474,13 @@ class TaskExecutor:
         if task.status not in {
             TaskStatus.PENDING,
             TaskStatus.RUNNING,
+            TaskStatus.CANCELLED,
         }:
             raise ValueError(
                 f"Task cannot be resumed from status: {task.status.value}"
             )
+
+        self._cancelled_tasks.discard(task_id)
 
         self._log(
             task.task_id,
@@ -359,7 +493,7 @@ class TaskExecutor:
         outputs = {}
 
         for step in task.steps:
-            if step.status == StepStatus.COMPLETED:
+            if step.status == StepStatus.COMPLETED and step.output is not None:
                 outputs[step.step_id] = step.output
 
         task.status = TaskStatus.RUNNING
@@ -390,7 +524,7 @@ class TaskExecutor:
         previous_handler = signal.getsignal(signal.SIGALRM)
 
         signal.signal(signal.SIGALRM, self._handle_timeout)
-        signal.alarm(self.tool_timeout)
+        signal.alarm(max(1, int(self.tool_timeout)))
 
         try:
             return self.registry.execute(tool_name, arguments)
