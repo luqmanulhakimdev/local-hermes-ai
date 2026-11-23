@@ -1418,28 +1418,30 @@ Implemented with:
 - Negative-answer evaluation
 - Dedicated RAG unit tests
 
-### Current Verification Results
+### Current Verification Results (v1.0 Release)
 
 | Area | Result |
 |---|---:|
-| Full unit test suite | 110/110 passed (98% coverage) |
-| RAG unit tests | 47/47 passed |
-| Average Retrieval Precision@3 | 0.92 |
-| Average Retrieval Recall@3 | 1.00 |
-| Average Answer Keyword Coverage | 0.92 |
+| Full regression test suite | 475/475 passed (100%) |
+| RAG unit & integration tests | 47/47 passed |
+| Automation & evaluation tests | 340/340 passed |
+| Hermes integration & security tests | 43/43 passed |
+| Adversarial security tests | 11/11 passed |
 | Negative Answer Tests | 2/2 passed |
 
-The next development focus is **Project 3: AI Automation Agent**, while continuing to improve the existing agent and RAG implementations.
+Local Hermes AI is now at **v1.0 Release Ready** status.
 
 ### Documentation
 
-For a more detailed learning plan, see [Learning Roadmap](docs/learning-roadmap.md).
-
-For technical architecture details, see [Architecture Documentation](docs/architecture.md).
+- [Release Notes v1.0](docs/release-notes-v1.0.md)
+- [Official Demonstration Workflow](docs/demo.md)
+- [System Architecture](docs/architecture.md)
+- [Automation Engine Architecture](docs/automation-architecture.md)
+- [Learning Roadmap](docs/learning-roadmap.md)
 
 ---
 
-## 🤖 Stage 16: Local Hermes AI Integration & Developer Workflow
+## 🤖 Local Hermes AI v1.0 — Architecture & Developer Workflow
 
 Local Hermes AI integrates with the locally installed **Hermes Agent** (`v0.22.6`) as an interface and orchestration layer, while keeping the core Local Hermes AI project strictly authoritative for safety, plan validation, tool registries, human approval, task persistence, and observability.
 

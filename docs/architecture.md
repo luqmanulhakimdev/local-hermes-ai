@@ -1,108 +1,125 @@
-# Local Personal AI Agent — Architecture
+# Local Hermes AI v1.0 — System Architecture
 
-## Overview
+## 1. System Overview
 
-Local Personal AI Agent is a local AI assistant built with Python, Ollama, and Qwen3.
+Local Hermes AI v1.0 is a local-first AI engineering system integrating:
+- **Local LLM Inference**: Ollama running Qwen3 (`qwen3:4b-instruct-2507-q4_K_M`) for chat and planning, and `nomic-embed-text` for vector embeddings.
+- **Persistent Conversational Memory**: SQLite-backed history and user preference store.
+- **Local RAG Pipeline**: Document ingestion, chunking, SQLite vector storage, cosine similarity search, and context-grounded Q&A.
+- **Safety-Hardened Automation Engine**: Multi-step task planner, AST-based tools, schema validation, human approval gates, retry policy, cancellation, persistence, and state recovery.
+- **Hermes Agent Integration**: Safe subprocess adapter and high-level service bridge integrating the project with the local Hermes Agent (`v0.22.6`) without compromising core safety boundaries.
 
-The system combines:
+---
 
-- Local LLM inference
-- Tool calling
-- Agent decision loops
-- Conversation history
-- Persistent memory
-- Local project file access
-
-## Architecture
+## 2. End-to-End Architecture
 
 ```text
-                    ┌─────────────────┐
-                    │      User       │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │   Python Agent  │
-                    └────────┬────────┘
-                             │
-                     Agent Decision Loop
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-              ▼              ▼              ▼
-        ┌──────────┐   ┌──────────┐   ┌──────────┐
-        │Calculator│   │Time Tool │   │File Tool │
-        └──────────┘   └──────────┘   └──────────┘
-              │              │              │
-              └──────────────┼──────────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │     Ollama      │
-                    │     Qwen3       │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │ SQLite Memory   │
-                    └─────────────────┘
+                           ┌───────────────┐
+                           │     User      │
+                           └───────┬───────┘
+                                   │
+                                   ▼
+                           ┌───────────────┐
+                           │ Hermes Agent  │
+                           │ Orchestration │
+                           └───────┬───────┘
+                                   │
+                                   ▼
+                        ┌─────────────────────┐
+                        │ Hermes Integration  │
+                        │   (src/hermes)      │
+                        └──────────┬──────────┘
+                                   │
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │     Local Hermes AI Core    │
+                    └──────────────┬──────────────┘
+                                   │
+                  ┌────────────────┼────────────────┐
+                  │                │                │
+                  ▼                ▼                ▼
+             Conversation        Local             AI
+                Memory            RAG          Automation
+              (SQLite)             │            Agent
+                                   │                │
+                                   │                ▼
+                                   │             Planner
+                                   │          (TaskPlanner)
+                                   │                │
+                                   │                ▼
+                                   │             Validator
+                                   │          (TaskValidator)
+                                   │                │
+                                   │                ▼
+                                   │             Approval
+                                   │           (Fail-Closed)
+                                   │                │
+                                   │                ▼
+                                   │             Executor
+                                   │          (TaskExecutor)
+                                   │                │
+                                   │                ▼
+                                   │              Tools
+                                   │           (Allowlist)
+                                   │                │
+                                   └───────────────┐│
+                                                   ▼▼
+                                            TaskStore & Logs
+                                            (SQLite Audit)
 ```
 
-## Agent Loop
+---
 
-The agent follows this basic cycle:
+## 3. Subsystem Breakdown
 
-1. Receive user input.
-2. Send context to the LLM.
-3. Determine whether a tool is required.
-4. Execute the selected tool.
-5. Return the tool result to the LLM.
-6. Repeat if another tool is required.
-7. Return the final answer.
+### 3.1 Personal Agent & Memory (`src/agent.py`, `src/memory.py`)
+- Provides conversational chat with persistent state in SQLite (`data/agent.db`).
+- Tracks user facts (name, preferences, goals) across turns.
+- Uses strict prompt boundaries and sanitized history extraction.
 
-## Memory
+### 3.2 Retrieval-Augmented Generation (`src/rag/`)
+- Ingests Markdown and plain text documents from `documents/`.
+- Chunks text into bounded segments.
+- Generates 768-dimensional embeddings via local `nomic-embed-text`.
+- Stores vectors in SQLite (`data/rag.db`) with cosine similarity retrieval.
+- Enforces similarity thresholds and context limits; abstains when relevant context is unavailable.
+- Treats all retrieved text as **untrusted reference data**.
 
-The system uses SQLite for persistent storage.
+### 3.3 Automation Engine (`src/automation/`)
+- **Planner (`TaskPlanner`)**: Converts requests into structured JSON `TaskPlan` models. If RAG context is supplied, formats it into isolated prompt sections with explicit negative constraints.
+- **Validator (`TaskValidator`)**: Validates task structure, enforces maximum 5 steps, requires sequential step IDs, checks tool allowlists, and enforces backward-only step output references (`$step_N`).
+- **Tool Registry (`ToolRegistry`)**: Maintains explicit allowlists with required and optional argument schema checks. Prevents unauthorized tool execution.
+- **Human Approval Gate**: Sensitive tools flagged `requires_approval=True` halt execution into `AWAITING_APPROVAL` status. Prompts claiming prior approval fail closed; only explicit human approval permits execution.
+- **Executor (`TaskExecutor`)**: Dispatches steps, resolves previous step references, bounds output size (`max_output_size`), enforces bounded execution timeouts, handles transient error retries, and supports cancellation.
+- **Task Store (`TaskStore`)**: Persists task and step state transitions into SQLite (`data/automation.db`). Supports deterministic resumption of interrupted tasks without re-executing completed steps.
+- **Logger (`TaskLogger`)**: Emits structured, machine-readable audit events with automatic secret redaction (`password`, `token`, `secret`, `api_key`).
 
-Two types of information are stored:
+### 3.4 Hermes Integration Layer (`src/hermes/`)
+- **CLI Adapter (`HermesCLIAdapter`)**: Executes `hermes chat` in oneshot mode with captured stdout/stderr, strict timeouts, output truncation, and no `shell=True`.
+- **Protocol Models (`HermesRequest`, `HermesResponse`)**: Typed and validated request/response contracts for operations: `run_automation`, `query_knowledge`, `get_task_status`, `resume_task`.
+- **Service Bridge (`HermesService`)**: Maps Hermes requests to authoritative project modules.
+- **One-Way Dependency**: Core modules never import Hermes; the core project remains 100% functional without Hermes.
 
-### Conversation History
+---
 
-Recent user and assistant messages.
+## 4. Security Invariants
 
-### Persistent Memory
+1. **No Arbitrary Execution**: Neither the LLM nor Hermes can invoke arbitrary shell commands or unregistered Python functions.
+2. **Untrusted Context**: Text from RAG documents or user input cannot override planning rules or bypass approvals.
+3. **Fail-Closed Approvals**: Missing handlers, non-boolean values, or LLM-generated assertions of approval fail closed.
+4. **AST Calculator**: Mathematical expressions are evaluated via restricted Python AST traversal without calling `eval()`.
+5. **Path Traversal Protection**: Filesystem tools restrict reads to permitted project paths.
 
-Explicit user information such as:
+---
 
-- Name
-- Goals
-- Interests
-- Preferences
+## 5. Persistence and Recovery
 
-## Security Considerations
+- All tasks and steps transition through deterministic state machines (`pending` -> `running` -> `completed` / `failed` / `cancelled` / `awaiting_approval`).
+- Interrupted or cancelled tasks can be resumed deterministically. Completed steps are loaded from `TaskStore` outputs and never re-executed.
 
-The agent does not directly execute arbitrary Python code generated by the model.
+---
 
-Tools are explicitly registered in an allowlist.
+## 6. Observability and Evaluation
 
-File access is restricted to the project directory.
-
-The calculator uses Python AST parsing instead of unrestricted `eval()`.
-
-## Current Limitations
-
-- Local inference performance depends on available hardware.
-- Memory retrieval is currently simple key-value storage.
-- Tool selection depends on LLM tool-calling support.
-- There is no semantic vector memory yet.
-- There is no web search integration yet.
-
-## Future Improvements
-
-- Streaming responses
-- Better memory retrieval
-- Vector database
-- RAG
-- Web/API tools
-- Automated testing
-- Observability and logging
+- Complete task execution histories can be reconstructed from structured logs.
+- Quantitative evaluation metrics measure plan validity, tool selection accuracy, execution outcome, recovery success, trace completeness, and approval compliance.
