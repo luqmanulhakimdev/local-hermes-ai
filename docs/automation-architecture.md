@@ -238,4 +238,64 @@ The planner prompt isolates user requests from retrieved knowledge using distinc
 - Structured `rag_context_attached` events are logged into SQLite via `TaskLogger` with `query`, `chunks_found`, `sources`, `scores`, and any retrieval `error`.
 - Full traceability connects retrieved chunks to subsequent task execution.
 
+## 12. Stage 16 — Hermes Integration Architecture
+
+### 12.1 Architectural Invariant & Role
+Hermes serves strictly as an **interface and orchestration layer**. The core Local Hermes AI project remains authoritative for safety, plan validation, tool allowlists, human approval, task execution, persistence, and observability:
+
+```text
+                    ┌─────────────────┐
+                    │  Hermes Agent   │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ Hermes Adapter  │
+                    │   (src/hermes)  │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ Local Hermes AI │
+                    │     Core        │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+             RAG          Planner        TaskStore
+                             │
+                             ▼
+                         Validator
+                             │
+                             ▼
+                          Approval
+                             │
+                             ▼
+                          Executor
+                             │
+                             ▼
+                           Tools
+```
+
+### 12.2 Strict Dependency Direction
+- **One-Way Dependency**: `src.hermes` depends on and imports core modules (`src.automation_agent`, `src.automation.*`, `src.rag.*`).
+- **Zero Infiltration**: The core modules never import `src.hermes`. The core project runs, tests, and evaluates completely independently of Hermes.
+
+### 12.3 Hermes Service Bridge & High-Level Operations
+Rather than exposing low-level system commands or tool execution primitives directly, `HermesService` exposes four high-level, strictly-controlled operations:
+1. `run_automation`: Converts user request into a validated `TaskPlan` via `TaskPlanner`, evaluates safety boundaries with `TaskValidator`, checks approvals, and executes through `TaskExecutor`.
+2. `query_knowledge`: Queries the local RAG vector store and returns retrieved chunks as inert data.
+3. `get_task_status`: Returns safe structured task metadata from `TaskStore` without exposing database internals or secrets.
+4. `resume_task`: Safely resumes an interrupted task from `TaskStore` without re-running completed steps.
+
+### 12.4 Security & Approval Boundaries
+- **Approval Preserved**: Tasks requiring approval enter `TaskStatus.AWAITING_APPROVAL`. Any assertion within Hermes prompts or arguments claiming prior approval is rejected; the project's human approval handler remains mandatory.
+- **Prompt Injection Containment**: All inputs from Hermes and retrieved RAG context are treated as untrusted external data. Malicious instructions to run unauthorized tools, bypass validation, or traverse file paths outside `PROJECT_ROOT` are rejected.
+- **Resource Constraints**: Subprocess execution via `HermesCLIAdapter` enforces bounded timeouts, query size ceilings (`MAX_REQUEST_SIZE = 10,000`), and response truncation (`MAX_OUTPUT_SIZE = 20,000`).
+
+### 12.5 Observability & Evaluation
+- High-level Hermes lifecycle events (`hermes_request_started`, `hermes_request_completed`, `hermes_request_failed`, `hermes_approval_required`) are logged to SQLite via `TaskLogger`.
+- `HermesRunMetrics` and `evaluate_hermes_run()` provide quantitative tracking of adapter reliability, automation success rate, approval compliance, and execution trace completeness.
+
+
 

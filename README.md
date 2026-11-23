@@ -1439,4 +1439,71 @@ For technical architecture details, see [Architecture Documentation](docs/archit
 
 ---
 
+## 🤖 Stage 16: Local Hermes AI Integration & Developer Workflow
+
+Local Hermes AI integrates with the locally installed **Hermes Agent** (`v0.22.6`) as an interface and orchestration layer, while keeping the core Local Hermes AI project strictly authoritative for safety, plan validation, tool registries, human approval, task persistence, and observability.
+
+### Architecture
+
+```text
+User
+  ↓
+Hermes Agent
+  ↓
+Hermes Service Bridge (src/hermes)
+  ↓
+Local Hermes AI Core
+  ├── RAG Retrieval Boundary
+  ├── Automation Planner
+  ├── Task Validator
+  ├── Human Approval Gate
+  ├── Task Executor
+  ├── Task Store (SQLite)
+  └── Observability & Structured Logs
+```
+
+### Local Developer Workflow
+
+1. **Start Ollama**:
+   ```bash
+   ollama serve
+   ```
+2. **Verify Local Models**:
+   ```bash
+   curl -s http://localhost:11434/api/tags
+   # Requires qwen3:4b-instruct-2507-q4_K_M and nomic-embed-text
+   ```
+3. **Verify Hermes Health**:
+   ```bash
+   python3 -m src.hermes --check
+   ```
+4. **Run Local Hermes AI Interactive Agent**:
+   ```bash
+   python3 -m src.main
+   ```
+5. **Use RAG Pipeline**:
+   ```bash
+   python3 -m src.rag.app
+   ```
+6. **Run Automation through Hermes Bridge**:
+   ```bash
+   # Basic calculation/task
+   python3 -m src.hermes --run "Hitung 50 + 50"
+
+   # Knowledge-augmented task with RAG
+   python3 -m src.hermes --run "Read project metrics and summarize" --rag
+   ```
+7. **Human Approval for Sensitive Tools**:
+   Tools requiring approval transition tasks to `awaiting_approval`. Hermes cannot bypass or auto-approve sensitive actions; the project's human approval handler remains strictly authoritative.
+8. **Inspect Task State & Resume**:
+   ```bash
+   # Query status
+   python3 -m src.hermes --status <task_id>
+
+   # Resume interrupted task
+   python3 -m src.hermes --resume <task_id>
+   ```
+
+---
+
 *Built as part of my journey into AI Engineering.*
