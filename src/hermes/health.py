@@ -30,7 +30,7 @@ def check_hermes(config: HermesConfig | None = None) -> dict:
             [config.executable_path, "--version"],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=10,
             shell=False,
         )
         if proc.returncode == 0:
