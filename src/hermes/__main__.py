@@ -5,6 +5,7 @@ import json
 import sys
 import uuid
 
+from src.automation.rag_context import RAGContextRetriever
 from src.automation_agent import AutomationAgent
 from src.hermes.config import HermesConfig
 from src.hermes.health import check_hermes
@@ -52,7 +53,8 @@ def main():
         print(json.dumps(report, indent=2))
         sys.exit(0 if report["status"] == "ok" else 1)
 
-    agent = AutomationAgent()
+    rag_retriever = RAGContextRetriever() if args.rag else None
+    agent = AutomationAgent(rag_retriever=rag_retriever)
     service = HermesService(agent=agent, config=config)
 
     if args.run:

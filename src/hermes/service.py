@@ -111,7 +111,8 @@ class HermesService:
                 task_id=task_id,
             )
         else:
-            err = result.steps[0].error if result.steps else "Execution halted"
+            step_errors = [s.error for s in result.steps if s.error]
+            err = step_errors[0] if step_errors else "Execution halted"
             self._log_event(
                 task_id,
                 "hermes_request_failed",

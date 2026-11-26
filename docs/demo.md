@@ -127,15 +127,15 @@ Data: {
 Run an automation task that retrieves project knowledge before planning:
 
 ```bash
-python3 -m src.hermes --run "Read project metrics and summarize testing status" --rag
+python3 -m src.hermes --run "Read project files and summarize" --rag
 ```
 
 Workflow executed:
 1. `RAGContextRetriever` retrieves relevant chunks from `data/rag.db`.
 2. Chunks are formatted as isolated, untrusted reference material in `TaskPlanner`.
-3. `TaskPlanner` generates a validated `TaskPlan` with arguments grounded in retrieved facts.
+3. `TaskPlanner` generates a validated multi-step `TaskPlan` (`list_files` → `read_file` → `summarize_text`).
 4. `TaskValidator` validates plan structure and tool allowlists.
-5. `TaskExecutor` executes tools within resource and timeout boundaries.
+5. `TaskExecutor` executes tools within resource and timeout boundaries (reading all permitted `.md`/`.txt` files in `documents/`).
 6. Results and structured audit events are stored in SQLite (`data/automation.db`).
 
 ---
@@ -180,6 +180,6 @@ python3 -m unittest discover -s tests -v
 
 Expected result:
 ```text
-Ran 475+ tests in ~2.5s
+Ran 482 tests in ~8s
 OK (0 failures, 0 errors)
 ```

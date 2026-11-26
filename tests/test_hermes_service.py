@@ -240,6 +240,38 @@ class TestHermesService(unittest.TestCase):
         self.assertEqual(response.status, HermesRequestStatus.FAILED)
         self.assertIn("Cannot resume", response.message)
 
+    def test_run_automation_reports_later_step_error(self):
+        def fail_step(expression):
+            raise ValueError("Step 2 failed intentionally")
+
+        self.registry.register(
+            ToolDefinition(
+                name="failing_tool",
+                description="Failing tool",
+                handler=fail_step,
+                required_arguments={"expression"},
+            )
+        )
+        plan = TaskPlan(
+            task_id="task_step2_fail",
+            description="Step 1 succeeds, step 2 fails",
+            steps=[
+                TaskStep(step_id=1, tool="calculator", arguments={"expression": "1+1"}),
+                TaskStep(step_id=2, tool="failing_tool", arguments={"expression": "$step_1"}),
+            ],
+        )
+        self.planner.plan.return_value = plan
+
+        request = HermesRequest(
+            request_id="req-step2-fail",
+            operation="run_automation",
+            message="Run multi-step fail",
+        )
+        response = self.service.handle_request(request)
+        self.assertEqual(response.status, HermesRequestStatus.FAILED)
+        self.assertIsNotNone(response.error)
+        self.assertIn("Step 2 failed intentionally", response.error)
+
 
 if __name__ == "__main__":
     unittest.main()

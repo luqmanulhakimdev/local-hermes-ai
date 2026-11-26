@@ -100,6 +100,22 @@ class TestFileTools(unittest.TestCase):
         with self.assertRaises(ValueError):
             file_tools.read_file("documents")
 
+    def test_read_file_list_of_paths(self):
+        second = self.documents / "second.md"
+        second.write_text("Second file content", encoding="utf-8")
+
+        result = file_tools.read_file(["documents/example.md", "documents/second.md"])
+        self.assertIn("Test content", result)
+        self.assertIn("Second file content", result)
+
+    def test_read_file_empty_list_rejected(self):
+        with self.assertRaises(ValueError):
+            file_tools.read_file([])
+
+    def test_read_file_list_with_unsafe_path_rejected(self):
+        with self.assertRaisesRegex(ValueError, "restricted"):
+            file_tools.read_file(["documents/example.md", "../secret.txt"])
+
 
 if __name__ == "__main__":
     unittest.main()

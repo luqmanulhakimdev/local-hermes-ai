@@ -28,7 +28,7 @@ def _validate_document_path(path: str) -> Path:
 
 
 
-def read_file(path: str) -> str:
+def _read_single_file(path: str) -> str:
     file_path = _validate_document_path(path)
 
     flags = os.O_RDONLY
@@ -65,6 +65,26 @@ def read_file(path: str) -> str:
     finally:
         if file_descriptor != -1:
             os.close(file_descriptor)
+
+
+def read_file(path: str | list[str]) -> str:
+    if isinstance(path, list):
+        if not path:
+            raise ValueError("File path list must not be empty")
+
+        sections = []
+        total_size = 0
+        for item in path:
+            content = _read_single_file(item)
+            section = f"--- {item} ---\n{content}"
+            total_size += len(section)
+            if total_size > MAX_FILE_SIZE:
+                raise ValueError("Document exceeds the maximum allowed size")
+            sections.append(section)
+
+        return "\n\n".join(sections)
+
+    return _read_single_file(path)
 
 
 
