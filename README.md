@@ -1435,6 +1435,8 @@ Local Hermes AI is now at **v1.0 Release Ready** status.
 
 - [Release Notes v1.0](docs/release-notes-v1.0.md)
 - [Official Demonstration Workflow](docs/demo.md)
+- [AI Engineering Evaluation Guide](docs/evaluation.md)
+- [AI Engineering Observability Guide](docs/observability.md)
 - [System Architecture](docs/architecture.md)
 - [Automation Engine Architecture](docs/automation-architecture.md)
 - [Learning Roadmap](docs/learning-roadmap.md)

@@ -131,19 +131,19 @@
 ## Phase 5 - AI Engineering Advanced Skills
 
 ### Evaluation
-- [ ] Golden datasets
-- [ ] LLM application evaluation
-- [ ] Agent trajectory evaluation
-- [ ] Regression evaluation
-- [ ] Failure analysis
+- [x] Golden datasets
+- [x] LLM application evaluation
+- [x] Agent trajectory evaluation
+- [x] Regression evaluation
+- [x] Failure analysis
 
 ### Observability
-- [ ] Structured logging
-- [ ] Tracing
-- [ ] Latency metrics
-- [ ] Error metrics
-- [ ] Token/cost metrics
-- [ ] Run inspection
+- [x] Structured logging
+- [x] Tracing
+- [x] Latency metrics
+- [x] Error metrics
+- [x] Token/cost metrics
+- [x] Run inspection
 
 ### AI Security
 - [ ] Prompt injection
